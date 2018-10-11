@@ -1,0 +1,591 @@
+<html>
+  <head>
+    <title>Gmail API Quickstart</title>
+    <meta charset='utf-8' />
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+
+    <!-- jQuery library -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+
+    <!-- Latest compiled JavaScript -->
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <style>
+          .hidden{ display: none; }
+
+    </style>
+    <style>
+      iframe {
+        width: 100%;
+        border: 0;
+        min-height: 80%;
+        height: 600px;
+        display: flex;
+      }
+    </style>
+  </head>
+  <body>
+   <div class="container">
+    <p>Gmail API Quickstart!</p>
+
+    <!--Add buttons to initiate auth sequence and sign out-->
+    <button id="authorize-button" style="display: none;">Authorize</button>
+    <button id="signout-button" style="display: none;" onclick="">Sign Out</button>
+    <a href="#compose-modal"
+        data-toggle="modal"
+        id="compose-button"
+        class="btn btn-primary pull-right hidden">Compose</a>
+
+    <table class="table table-striped table-inbox hidden">
+        <thead>
+          <tr>
+            <th>From</th>
+            <th>Subject</th>
+            <th>Date/Time</th>
+          </tr>
+        </thead>
+        <tbody id="inbox-table"></tbody>
+      </table>
+    </div>
+
+    <div class="modal fade" id="progress-modal" tabindex="-1" role="dialog">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+              <h4 class="modal-title">Uploading:</h4>
+            </div>
+            <div class="modal-body">
+              <progress id=progress value="0"></progress>
+              <span id="display"></span>
+            </div>
+          </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="compose-modal" tabindex="-1" role="dialog">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+            <h4 class="modal-title">Compose</h4>
+          </div>
+          <form enctype="multipart/form-data">
+            <div class="modal-body">
+              <div class="form-group">
+                <input type="email" name="email" class="form-control" id="compose-to" placeholder="To" required />
+              </div>
+
+              <div class="form-group">
+                <input type="text" name="subject" class="form-control" id="compose-subject" placeholder="Subject" required />
+              </div>
+
+              <div class="form-group">
+                <textarea class="form-control" name="message" id="compose-message" placeholder="Message" rows="10" required></textarea>
+                <p id="fileInfo"></p>
+              </div>
+            </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="sendEmailWithAttachments()">Send</button>
+                <input type="file" name="filetoupload" id="myFile" multiple size="50" onchange="uploadFiles()">
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <pre id="content"></pre>
+    <div id="MovePage" class="hidden">
+      <button type="button" class="btn btn-default pull-left" onclick="prePage()" >Previus Page</button>
+      <button type="button" class="btn btn-primary pull-right" onclick="nextPage()">Next Page</button>
+    </div>
+    <script>
+
+    // Client ID and API key from the Developer Console
+    var CLIENT_ID = '512327671493-4m6jdd6l82bdiqh2vv9npfg34leom6v6.apps.googleusercontent.com';
+
+    // Array of API discovery doc URLs for APIs used by the quickstart
+    var DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest"];
+
+    // Authorization scopes required by the API; multiple scopes can be
+    // included, separated by spaces.
+    var SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
+
+    var authorizeButton = document.getElementById('authorize-button');
+    var signoutButton = document.getElementById('signout-button');
+
+    var att = [];
+    var PageToken = [];
+    var _fileName;
+    var message_;
+
+    /**
+     *  On load, called to load the auth2 library and API client library.
+     */
+    function handleClientLoad() {
+        gapi.load('client:auth2', initClient);
+    }
+
+    /**
+     *  Initializes the API client library and sets up sign-in state
+     *  listeners.
+     */
+    function initClient() {
+      gapi.client.init({
+        discoveryDocs: DISCOVERY_DOCS,
+        clientId: CLIENT_ID,
+        scope: SCOPES
+      }).then(function () {
+        // Listen for sign-in state changes.
+        gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+
+        // Handle the initial sign-in state.
+        updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+        authorizeButton.onclick = handleAuthClick;
+        signoutButton.onclick = handleSignoutClick;
+      });
+    }
+
+    /**
+     *  Called when the signed in status changes, to update the UI
+     *  After a sign-in, the API is called.
+     */
+    function updateSigninStatus(isSignedIn) {
+      if (isSignedIn) {
+        authorizeButton.style.display = 'none';
+        signoutButton.style.display = 'block';
+        $('#compose-button').removeClass("hidden");
+        $('#MovePage').removeClass("hidden");
+        $('.table-inbox').removeClass("hidden");
+
+        displayInbox('');
+      } else {
+        authorizeButton.style.display = 'block';
+        signoutButton.style.display = 'none';
+      }
+    }
+
+    /**
+     *  Sign in the user upon button click.
+     */
+    function handleAuthClick(event) {
+      gapi.auth2.getAuthInstance().signIn();
+    }
+
+    /**
+     *  Sign out the user upon button click.
+     */
+    function handleSignoutClick(event) {
+      gapi.auth2.getAuthInstance().signOut();
+      $('#MovePage').addClass("hidden");
+      $('#compose-button').addClass("hidden");
+      $('.table-inbox').addClass("hidden");
+    }
+
+    function nextPage(){
+      document.getElementById('inbox-table').innerHTML = '';
+      displayInbox(PageToken[PageToken.length - 1]);
+    }
+
+    function prePage(){
+      document.getElementById('inbox-table').innerHTML = '';
+      PageToken.pop();
+      if(PageToken.length != 0){
+        displayInbox(PageToken.pop());
+      } else {
+        displayInbox('');
+      }
+    }
+    /**
+     *  Update the UI with the user mail inbox.
+     */
+    function displayInbox(currentPageToken) {
+      console.log(PageToken.length);
+      request = gapi.client.gmail.users.messages.list({
+        'userId': 'me',
+        'labelIds': 'INBOX',
+        'pageToken': currentPageToken,
+        'maxResults': 10
+      });
+
+      request.execute(function(response) {
+        $.each(response.messages, function() {
+          var messageRequest = gapi.client.gmail.users.messages.get({
+            'userId': 'me',
+            'id': this.id
+          });
+          messageRequest.execute(appendMessageRow);
+        });
+        PageToken.push(response.nextPageToken);
+      });
+    }
+
+    /**
+     *  Insert a row to the UI table (of the inbox).
+     */
+    function appendMessageRow(message) {
+      $('.table-inbox tbody').append(
+        '<tr>\
+          <td>'+getHeader(message.payload.headers, 'From')+'</td>\
+          <td>\
+            <a href="#message-modal-' + message.id +
+              '" data-toggle="modal" id="message-link-' + message.id+'">' +
+              getHeader(message.payload.headers, 'Subject') +
+            '</a>\
+          </td>\
+          <td>'+getHeader(message.payload.headers, 'Date')+'</td>\
+        </tr>'
+      );
+
+      $('body').append(
+        '<div class="modal fade" id="message-modal-' + message.id +
+            '" tabindex="-1" role="dialog" aria-labelledby="myModalLabel">\
+          <div class="modal-dialog modal-lg">\
+            <div class="modal-content">\
+              <div class="modal-header">\
+                <button type="button"\
+                        class="close"\
+                        data-dismiss="modal"\
+                        aria-label="Close">\
+                  <span aria-hidden="true">&times;</span></button>\
+                <h4 class="modal-title" id="myModalLabel">' +
+                  getHeader(message.payload.headers, 'Subject') +
+                '</h4>\
+              </div>\
+              <div class="modal-body">\
+                <iframe id="message-iframe-'+message.id+'" srcdoc="<p>Loading...</p>">\
+                </iframe>\
+              </div>\
+            </div>\
+          </div>\
+        </div>'
+      );
+
+      $('#message-link-'+message.id).on('click', function(){
+        var ifrm = $('#message-iframe-'+message.id)[0].contentWindow.document;
+        if (ifrm) {
+          $('body', ifrm).html(getBody(message.payload));
+        }
+        else {
+          alert('Wonder what browser this is...'+navigator.userAgent);
+        }
+      });
+    }
+
+    function getHeader(headers, index) {
+      var header = '';
+      $.each(headers, function(){
+        if(this.name === index){
+          header = this.value;
+        }
+      });
+      return header;
+    }
+
+    function getBody(message) {
+      var encodedBody = '';
+      if(typeof message.parts === 'undefined')
+      {
+        encodedBody = message.body.data;
+      }
+      else
+      {
+        encodedBody = getHTMLPart(message.parts);
+      }
+      encodedBody = encodedBody.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, '');
+      return decodeURIComponent(escape(window.atob(encodedBody)));
+    }
+
+    function getHTMLPart(arr) {
+      for(var x = 0; x <= arr.length; x++)
+      {
+        if(typeof arr[x].parts === 'undefined')
+        {
+          if(arr[x].mimeType === 'text/html')
+          {
+            return arr[x].body.data;
+          }
+        }
+        else
+        {
+          return getHTMLPart(arr[x].parts);
+        }
+      }
+      return '';
+    }
+
+    /**
+     *  Insert a file as an attachment to the mail.
+     */
+    function uploadFiles(){
+      var x = document.getElementById("myFile");
+      var txt = "";
+      if ('files' in x) {
+          if (x.files.length == 0) {
+            if(att.length == 0){
+              txt = "Select one or more files.";
+              document.getElementById("fileInfo").innerHTML += txt + " \n";
+            }
+          } else {
+              for (var i = 0; i < x.files.length; i++) {
+                  var file = x.files[i];
+
+                  // Pass the file to the blob, not the input[0].
+                  fileData = new Blob([file]);
+                  // Pass getBuffer to promise.
+                  var promise = new Promise(getBuffer);
+                  // Wait for promise to be resolved, or log error.
+                  promise.then(function(data) {
+                     att.push({
+                        mimeType: file.type,
+                        fileName: file.name,
+                        length: data.length,
+                        bytes: data.toString()
+                    });
+
+                    if ('name' in file) {
+                        txt += "<br><strong> name: " + file.name + "</strong><br>";
+                    }
+                    if ('size' in file) {
+                        txt += "size: " + file.size + " bytes <br>";
+                    }
+                    document.getElementById("fileInfo").innerHTML += txt + " \n";
+                  }).catch(function(err) {
+                    console.log('Error: ',err);
+                  });
+
+              }
+          }
+      }
+      else {
+          if (x.value == "") {
+              txt += "Select one or more files.";
+          } else {
+              txt += "The files property is not supported by your browser!";
+              txt  += "<br>The path of the selected file: " + x.value; // If the browser does not support the files property, it will return the path of the selected file instead.
+          }
+          document.getElementById("fileInfo").innerHTML += txt + " \n";
+      }
+    }
+
+    function getBuffer(resolve) {
+      var reader = new FileReader();
+      reader.readAsDataURL(fileData);
+      reader.onload = function() {
+        var base64Data = reader.result
+        resolve(base64Data);
+      }
+    }
+
+    /**
+     * Create the message format.
+     * Call to callAwsAPI.
+     */
+    function sendEmailWithAttachments() {
+        $('#send-button').addClass('disabled');
+        $('#compose-modal').modal('hide');
+        $('#progress-modal').modal('toggle');
+        document.getElementById("compose-button").href = "#progress-modal";
+
+        var message = {
+          to:
+            $('#compose-to').val(),
+          from: gapi.auth2.getAuthInstance().currentUser.get().getBasicProfile().getEmail(),
+          body: {
+            text: $('#compose-message').val(),
+          },
+          subject: $('#compose-subject').val(),
+          files: att
+        };
+
+        callAwsAPI(message, composeTidy);
+    }
+
+    /**
+     * Call to makeFile to make json file from the message.
+     * Call to StartUpload to upload the message to S3.
+     */
+    function callAwsAPI(message, callback) {
+        message_ = message;
+
+        var promise = new Promise(makeFile);
+
+        // Wait for promise to be resolved, or log error.
+        promise.then(function(data) {
+          StartUpload(data, callback);
+        }).catch(function(err) {
+          callback();
+          console.log('Error: ',err);
+        });
+    }
+
+    /**
+     * Compose a JSON file from the message
+     */
+    function makeFile(promise) {
+      if(message_.length )
+        var str = JSON.stringify(message_);
+        var data = new Blob([str], {type: 'application/json'});
+        promise(data);
+    }
+
+    /**
+     * Call to sign_request.
+     * Call to upload file function.
+     */
+    function StartUpload(file, callback) {
+      if (!file) return;
+
+      sign_request(file, function(response) {
+          upload(file, response.signed_request, response.url, callback, function() {});
+      })
+    }
+
+    /**
+     * Get sign request from aws.
+     */
+    function sign_request(file, done) {
+        var xhr = new XMLHttpRequest()
+        _fileName = guid() + ".json";
+        xhr.open("GET", "/sign?file_name=" + _fileName + "&file_type=application/json")
+        xhr.onreadystatechange = function() {
+          if(xhr.readyState === 4 && xhr.status === 200) {
+            var response = JSON.parse(xhr.responseText)
+            done(response)
+          }
+        }
+        xhr.send()
+    }
+
+    /**
+     * Create and return unique id
+     */
+    function guid() {
+      function s4() {
+        return Math.floor((1 + Math.random()) * 0x10000)
+          .toString(16)
+          .substring(1);
+      }
+      return s4() + s4() + '-' + s4() + '-' + s4() + '-' +
+        s4() + '-' + s4() + s4() + s4();
+    }
+
+    /**
+     *  Upload the message file to S3.
+     */
+    function upload(file, signed_request, url, callback, done) {
+          var progressBar = document.getElementById("progress");
+          var display = document.getElementById("display");
+          var xhr = new XMLHttpRequest()
+          xhr.open("PUT", signed_request, true)
+          xhr.setRequestHeader('x-amz-acl', 'public-read')
+          xhr.onload = function() {
+            if (xhr.status === 200) {
+              sendToAPIGateway(_fileName, callback);
+              done();
+            }
+          }
+          xhr.upload.onprogress = function (e) {
+            if (e.lengthComputable) {
+                progressBar.max = e.total;
+                progressBar.value = e.loaded;
+                display.innerHTML = Math.floor((e.loaded / e.total) * 100) + '%';
+                console.log(display);
+            }
+          }
+          xhr.upload.onloadstart = function (e) {
+              progressBar.value = 0;
+          }
+          xhr.upload.onloadend = function (e) {
+              progressBar.value = e.loaded;
+          }
+
+        xhr.send(file)
+    }
+
+    /**
+     * Send the name of the json file that uploaded to S3 to AWS api.
+     */
+    function sendToAPIGateway(fileName, callback){
+      var http = new XMLHttpRequest();
+      var url = "https://t74yc7dizk.execute-api.us-west-2.amazonaws.com/Stream/file";
+      http.open("POST", url, true);
+
+      http.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+
+      http.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+          callGmailAPI_(createMessage(JSON.parse(http.response)), callback);
+        }
+      }
+
+      http.send(JSON.stringify({"fileName" : fileName}));
+    }
+
+    function createMessage(msg){
+      var mail = [
+        'Content-Type: multipart/mixed; boundary="foo_bar_baz"\r\n',
+        'MIME-Version: 1.0\r\n',
+        'From: ' + msg.from + '\r\n',
+        'To: ' + msg.to + '\r\n',
+        'Subject: ' + msg.subject + '\r\n\r\n',
+
+        '--foo_bar_baz\r\n',
+        'Content-Type: text/plain; charset="UTF-8"\r\n',
+        'MIME-Version: 1.0\r\n',
+        'Content-Transfer-Encoding: 7bit\r\n\r\n',
+
+        msg.body.text + '\r\n\r\n',
+         '--foo_bar_baz--'
+      ].join('');
+      return mail;
+    }
+
+    /**
+     * Compose Gmail message and send immediately
+     */
+    function callGmailAPI_(message, callback) {
+        $.ajax({
+          type: "POST",
+          url: "https://www.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart",
+          contentType: "message/rfc822",
+          beforeSend: function(xhr, settings) {
+            xhr.setRequestHeader('Authorization','Bearer ' + gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token);
+          },
+          data: message
+        });
+        callback();
+    }
+
+    /**
+     *  Clean all message values.
+     *  Go back to inbox.
+     */
+    function composeTidy()
+    {
+        document.getElementById("compose-button").href = "#compose-modal";
+        $('#progress-modal').modal('hide');
+
+        $('#compose-to').val('');
+        $('#compose-subject').val('');
+        $('#compose-message').val('');
+
+        $('#send-button').removeClass('disabled');
+
+        $('#myFile').val('');
+        document.getElementById("fileInfo").innerHTML = '';
+
+        document.getElementById("progress").value = 0;
+        document.getElementById("display").innerHTML = '';
+
+        message_ = "";
+        att = [];
+    }
+
+    </script>
+    <script async defer src="https://apis.google.com/js/api.js"
+      onload="this.onload=function(){};handleClientLoad()"‎>
+    </script>
+  </body>
+</html>
